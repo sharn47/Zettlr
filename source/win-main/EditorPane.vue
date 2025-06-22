@@ -34,6 +34,7 @@
             v-bind:window-id="windowId"
             v-bind:editor-commands="editorCommands"
             v-on:global-search="emit('globalSearch', $event)"
+            v-on:define-word="emit('define-word', $event)" 
           ></MainEditor>
         </Teleport>
       </template>
@@ -122,7 +123,15 @@ const props = defineProps<{
 
 type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
 
-const emit = defineEmits<(e: 'globalSearch', query: string) => void>()
+const emit = defineEmits<{
+  (e: 'globalSearch', query: string): void
+  (e: 'define-word', payload: {
+    word: string
+    target: HTMLElement
+    range: { anchor: any; head: any }
+    leafId: string
+  }): void
+}>()
 
 const documentTabDrag = ref<boolean>(false)
 const documentTabDragWhere = ref<DragTargetAreas|undefined>(undefined)

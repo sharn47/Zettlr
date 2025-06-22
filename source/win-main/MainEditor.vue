@@ -33,6 +33,7 @@
 
 import MarkdownEditor from '@common/modules/markdown-editor'
 import objectToArray from '@common/util/object-to-array'
+import type CodeMirror from 'codemirror'  
 
 import { ref, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
 import { type EditorCommands } from './App.vue'
@@ -74,8 +75,16 @@ const props = defineProps<{
   distractionFree: boolean
   file: OpenDocument
 }>()
-
-const emit = defineEmits<(e: 'globalSearch', query: string) => void>()
+type DefineWordPayload = {
+  word: string
+  target: HTMLElement
+  range: { anchor: any; head: any }   // keep “any” for now; you can tighten later
+  leafId: string
+}
+const emit = defineEmits<{
+  (e: 'globalSearch', query: string): void
+  (e: 'define-word', payload: DefineWordPayload): void
+}>()
 
 const windowStateStore = useWindowStateStore()
 const documentTreeStore = useDocumentTreeStore()
@@ -176,7 +185,49 @@ ipcRenderer.on('links', _e => {
 // MOUNTED HOOK
 onMounted(() => {
   loadDocument().catch(err => console.error(err))
+  
 })
+function attachDictionaryHandlers (editor: MarkdownEditor) {
+  const cm = editor.instance as unknown as CodeMirror.Editor   // CodeMirror v5
+
+  function wordInfo (pos: CodeMirror.Position) {
+    const range = cm.findWordAt(pos)
+    return {
+      text: cm.getRange(range.anchor, range.head).trim(),
+      range
+    }
+  }
+
+  /* ---- Right-click ---- */
+  cm.getWrapperElement().addEventListener('contextmenu', (ev) => {
+    const pos = cm.coordsChar({ left: ev.clientX, top: ev.clientY })
+    const { text, range } = wordInfo(pos)
+    if (!text) return
+    emit('define-word', {
+      word: text,
+      target: ev.target as HTMLElement,
+      range,
+      leafId: props.leafId
+    })
+  })
+
+  /* ---- ⇧⌘D / Shift+Ctrl+D ---- */
+  cm.addKeyMap({
+    'Shift-Cmd-D': () => {
+      const cur = cm.getCursor()
+      const { text, range } = wordInfo(cur)
+      if (!text) return
+      const coords = cm.cursorCoords(cur, 'page')
+      emit('define-word', {
+        word: text,
+        target: document.elementFromPoint(coords.left, coords.top) as HTMLElement,
+        range,
+        leafId: props.leafId
+      })
+    },
+    'Shift-Ctrl-D': 'Shift-Cmd-D'
+  })
+}
 
 onBeforeUnmount(() => {
   currentEditor?.unmount()
@@ -513,7 +564,7 @@ async function loadDocument (): Promise<void> {
 
   wrapper.replaceWith(newEditor.dom)
   currentEditor = newEditor
-
+  attachDictionaryHandlers(newEditor)
   windowStateStore.tableOfContents = currentEditor.tableOfContents
   windowStateStore.activeDocumentInfo = currentEditor.documentInfo
 

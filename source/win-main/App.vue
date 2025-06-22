@@ -53,6 +53,7 @@
               v-bind:editor-commands="editorCommands"
               v-bind:window-id="windowId"
               v-on:global-search="startGlobalSearch($event)"
+              @define-word="openDefinition"
             ></EditorPane>
             <EditorBranch
               v-else-if="paneConfiguration !== undefined"
@@ -116,6 +117,15 @@
     v-on:start="startPomodoro()"
     v-on:stop="stopPomodoro()"
   ></PopoverPomodoro>
+  <PopoverWordDefinition
+  v-if="showDefinitionPopover && definitionTarget"
+  :target="definitionTarget"
+  :word="definitionWord"
+  :entries="definitionEntries"
+  @replace="replaceWithSynonym"
+  @close="showDefinitionPopover = false"
+></PopoverWordDefinition>
+
 </template>
 
 <script setup lang="ts">
@@ -170,6 +180,17 @@ import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from 'sourc
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import PopoverWordDefinition from '../win-main/PopoverWordDefinition.vue'
+import { lookupWord, type WordEntry } from '../win-main/dictionary'
+
+const showDefinitionPopover = ref(false)
+const definitionTarget      = ref<HTMLElement|null>(null)
+const definitionEntries     = ref<WordEntry[]>([])
+const definitionWord        = ref('')
+const replacementCtx = ref<{
+  leafId: string
+  range: { anchor: any; head: any }
+} | null>(null)
 
 const ipcRenderer = window.ipc
 
@@ -191,6 +212,30 @@ const SOUND_EFFECTS = [
     label: 'Chime'
   }
 ]
+function openDefinition (p: {
+  word: string
+  target: HTMLElement
+  range: { anchor; head }
+  leafId: string
+}) {
+  const defs = lookupWord(p.word)
+  if (!defs.length) return                       // unknown word = ignore
+  definitionEntries.value = defs
+  definitionWord.value    = p.word
+  definitionTarget.value  = p.target
+  replacementCtx.value    = { leafId: p.leafId, range: p.range }
+  showDefinitionPopover.value = true
+}
+function replaceWithSynonym (syn: string) {
+  if (!replacementCtx.value) return
+  editorCommands.value.data = {
+    leafId: replacementCtx.value.leafId,
+    range:  replacementCtx.value.range,
+    text:   syn
+  }
+  editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
+  showDefinitionPopover.value = false
+}
 
 const searchParams = new URLSearchParams(window.location.search)
 // The window number indicates which main window this one here is. This is only
